@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { supabase } from './supabase'
 import './App.css'
 
 const GUILD = { name: "V Cute", realm: "Illidan", region: "us" }
@@ -22,14 +23,21 @@ function App() {
   const [error, setError] = useState("")
 
   useEffect(() => {
-    const saved = localStorage.getItem("roster")
-    if (saved) setRoster(JSON.parse(saved))
-  }, [])
+    const fetchRoster = async () => {
+      const { data, error } = await supabase
+        .from('raiders')
+        .select('*')
+        .order('created_at', { ascending: true })
 
-  useEffect(() => {
-    if (roster.length === 0) return
-    localStorage.setItem("roster", JSON.stringify(roster))
-  }, [roster])
+      if (error) {
+        console.error('Error fetching roster:', error)
+      } else {
+        setRoster(data)
+      }
+    }
+
+    fetchRoster()
+  }, [])
 
   const searchCharacter = async () => {
     setLoading(true)
@@ -52,7 +60,7 @@ function App() {
     }
   }
 
-  const addRaider = () => {
+  const addRaider = async () => {
     if (!searchResult) return
     if (roster.find(r => r.name.toLowerCase() === searchResult.name.toLowerCase())) {
   setError("That raider is already on the roster.")
@@ -68,20 +76,48 @@ function App() {
       realm: searchResult.realm.toLowerCase(),
       note: "",
     }
-    setRoster(prev => [...prev, newRaider])
+    const { data, error } = await supabase
+      .from('raiders')
+      .insert([newRaider])
+      .select()
+
+    if (error) {
+      setError("Failed to add raider.")
+      console.error(error)
+    } else {
+      setRoster(prev => [...prev, data[0]])
+    }
     setSearchResult(null)
     setSearchName("")
     setSearchRealm("illidan")
 
   }
 
-    const updateNote = (id: number, note: string) => {
-    setRoster(prev => prev.map(r => r.id === id ? { ...r, note } : r))
-  } 
+  const updateNote = async (id: number, note: string) => {
+  setRoster(prev => prev.map(r => r.id === id ? { ...r, note } : r))
+  
+  const { error } = await supabase
+    .from('raiders')
+    .update({ note })
+    .eq('id', id)
 
-  const removeRaider = (id: number) => {
+  if (error) {
+    console.error('Error updating note:', error)
+  }
+}
+
+  const removeRaider = async (id: number) => {
+  const { error } = await supabase
+    .from('raiders')
+    .delete()
+    .eq('id', id)
+
+  if (error) {
+    console.error('Error removing raider:', error)
+  } else {
     setRoster(prev => prev.filter(r => r.id !== id))
   }
+}
 
   return (
     <div>
