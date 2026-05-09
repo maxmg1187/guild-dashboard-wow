@@ -14,13 +14,27 @@ type Raider = {
   note: string
 }
 
+type NewRaider = Omit<Raider, 'id'>
+
 function App() {
+  const [session, setSession] = useState<any>(null)
   const [roster, setRoster] = useState<Raider[]>([])
   const [searchName, setSearchName] = useState("")
   const [searchRealm, setSearchRealm] = useState("illidan")
   const [searchResult, setSearchResult] = useState<any>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session)
+    })
+    supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session)
+    })
+  }, [])
 
   useEffect(() => {
     const fetchRoster = async () => {
@@ -28,16 +42,24 @@ function App() {
         .from('raiders')
         .select('*')
         .order('created_at', { ascending: true })
-
       if (error) {
         console.error('Error fetching roster:', error)
       } else {
         setRoster(data)
       }
     }
-
     fetchRoster()
   }, [])
+
+  const login = async () => {
+    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    if (error) setError("Invalid credentials.")
+  }
+
+  const logout = async () => {
+    await supabase.auth.signOut()
+    setSession(null)
+  }
 
   const searchCharacter = async () => {
     setLoading(true)
@@ -63,12 +85,10 @@ function App() {
   const addRaider = async () => {
     if (!searchResult) return
     if (roster.find(r => r.name.toLowerCase() === searchResult.name.toLowerCase())) {
-  setError("That raider is already on the roster.")
-  return
-}
-
-    const newRaider: Raider = {
-      id: Date.now(),
+      setError("That raider is already on the roster.")
+      return
+    }
+    const newRaider: NewRaider = {
       name: searchResult.name,
       class: searchResult.class,
       spec: searchResult.active_spec_name,
@@ -80,7 +100,6 @@ function App() {
       .from('raiders')
       .insert([newRaider])
       .select()
-
     if (error) {
       setError("Failed to add raider.")
       console.error(error)
@@ -90,34 +109,62 @@ function App() {
     setSearchResult(null)
     setSearchName("")
     setSearchRealm("illidan")
-
   }
 
   const updateNote = async (id: number, note: string) => {
-  setRoster(prev => prev.map(r => r.id === id ? { ...r, note } : r))
-  
-  const { error } = await supabase
-    .from('raiders')
-    .update({ note })
-    .eq('id', id)
-
-  if (error) {
-    console.error('Error updating note:', error)
+    setRoster(prev => prev.map(r => r.id === id ? { ...r, note } : r))
+    const { error } = await supabase
+      .from('raiders')
+      .update({ note })
+      .eq('id', id)
+    if (error) console.error('Error updating note:', error)
   }
-}
 
   const removeRaider = async (id: number) => {
-  const { error } = await supabase
-    .from('raiders')
-    .delete()
-    .eq('id', id)
-
-  if (error) {
-    console.error('Error removing raider:', error)
-  } else {
-    setRoster(prev => prev.filter(r => r.id !== id))
+    const { error } = await supabase
+      .from('raiders')
+      .delete()
+      .eq('id', id)
+    if (error) {
+      console.error('Error removing raider:', error)
+    } else {
+      setRoster(prev => prev.filter(r => r.id !== id))
+    }
   }
-}
+
+  if (!session) {
+    return (
+      <div>
+        <div className="header">
+          <div className="header-left">
+            <h1>V Cute <span>Guild Dashboard</span></h1>
+            <p className="header-sub">Illidan — US</p>
+          </div>
+        </div>
+        <div className="search-card">
+          <h2>Officer Login</h2>
+          <div className="search-inputs">
+            <input
+              type="email"
+              placeholder="Email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && login()}
+            />
+            <input
+              type="password"
+              placeholder="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && login()}
+            />
+            <button onClick={login}>Login</button>
+          </div>
+          {error && <p className="search-error">{error}</p>}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div>
@@ -126,7 +173,10 @@ function App() {
           <h1>V Cute <span>Guild Dashboard</span></h1>
           <p className="header-sub">Illidan — US</p>
         </div>
-        <div className="raider-count">{roster.length} Raiders</div>
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+          <div className="raider-count">{roster.length} Raiders</div>
+          <button className="remove-btn" onClick={logout}>Logout</button>
+        </div>
       </div>
 
       <div className="search-card">
@@ -186,14 +236,14 @@ function App() {
                 <td>{raider.spec}</td>
                 <td>{raider.ilvl}</td>
                 <td>
-                <input
-                  type="text"
-                  className="note-input"
-                  placeholder="Add note..."
-                  value={raider.note}
-                  onChange={(e) => updateNote(raider.id, e.target.value)}
-                />
-</td>
+                  <input
+                    type="text"
+                    className="note-input"
+                    placeholder="Add note..."
+                    value={raider.note}
+                    onChange={(e) => updateNote(raider.id, e.target.value)}
+                  />
+                </td>
                 <td>
                   <a
                     href={`https://www.warcraftlogs.com/character/${GUILD.region}/${raider.realm}/${raider.name.toLowerCase()}`}
